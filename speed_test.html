@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Internet Speed Test</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f4f4f4;
+        }
+
+        #speed-test-container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            width: 80%;
+            max-width: 600px;
+        }
+
+        #results {
+            margin-top: 20px;
+        }
+
+        .result-item {
+            margin-bottom: 10px;
+        }
+
+        #graph-container{
+          height: 200px;
+          margin-top: 20px;
+        }
+
+        #progress-container {
+            margin-top: 10px;
+        }
+
+        #progress-bar {
+            width: 100%;
+            background-color: #ddd;
+            border-radius: 5px;
+            height: 20px;
+        }
+
+        #progress-bar-fill {
+            height: 100%;
+            background-color: #4CAF50;
+            width: 0%;
+            border-radius: 5px;
+        }
+
+        button {
+            padding: 10px 20px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div id="speed-test-container">
+        <h1>Internet Speed Test</h1>
+        <button id="start-test">Start Speed Test</button>
+        <div id="progress-container">
+            <div id="progress-bar">
+                <div id="progress-bar-fill"></div>
+            </div>
+            <p id="progress-text"></p>
+        </div>
+        <div id="graph-container">
+            <canvas id="speedChart"></canvas>
+        </div>
+        <div id="results">
+            <div class="result-item">Download Speed: <span id="download-speed"></span> Mbps</div>
+            <div class="result-item">Upload Speed: <span id="upload-speed"></span> Mbps</div>
+            <div class="result-item">Ping: <span id="ping"></span> ms</div>
+            <div class="result-item">Jitter: <span id="jitter"></span> ms</div>
+            <div class="result-item">IP Address: <span id="ip-address"></span></div>
+            <div class="result-item">Server: <span id="server-name"></span></div>
+        </div>
+    </div>
+
+    <script>
+        const startTestButton = document.getElementById('start-test');
+        const downloadSpeedDisplay = document.getElementById('download-speed');
+        const uploadSpeedDisplay = document.getElementById('upload-speed');
+        const pingDisplay = document.getElementById('ping');
+        const jitterDisplay = document.getElementById('jitter');
+        const ipAddressDisplay = document.getElementById('ip-address');
+        const serverNameDisplay = document.getElementById('server-name');
+        const progressBarFill = document.getElementById('progress-bar-fill');
+        const progressText = document.getElementById('progress-text');
+        const speedChartCanvas = document.getElementById('speedChart').getContext('2d');
+        let speedChart;
+
+        let downloadSpeeds = [];
+        let uploadSpeeds = [];
+        let pingTimes = [];
+
+        function updateProgress(percent, text) {
+            progressBarFill.style.width = percent + '%';
+            progressText.textContent = text;
+        }
+
+        function updateChart(labels, data, label, color) {
+            if (speedChart) {
+                speedChart.destroy();
+            }
+            speedChart = new Chart(speedChartCanvas, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: label,
+                        data: data,
+                        borderColor: color,
+                        fill: false
+                    }]
+                },
+                options: {
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+        }
+
+        async function getIPAddress() {
+          try {
+            const response = await fetch('https://api.ipify.org?format=json');
+            const data = await response.json();
+            return data.ip;
+          } catch (error){
+            console.error("Error fetching IP:", error);
+            return "Could not fetch IP";
+          }
+        }
+
+        async function performSpeedTest() {
+            startTestButton.disabled = true;
+            downloadSpeeds = [];
+            uploadSpeeds = [];
+            pingTimes = [];
+            let server = "https://speedtest.tele2.net/1MB.zip"; // Example server
+            serverNameDisplay.textContent = "speedtest.tele2.net";
+
+            const ip = await getIPAddress();
+            ipAddressDisplay.textContent = ip;
+
+            // Download Test
+            updateProgress(10, 'Starting Download Test...');
+            let downloadSpeed = await testDownloadSpeed(server);
+            downloadSpeedDisplay.textContent = downloadSpeed.toFixed(2);
+            updateProgress(40, 'Download Test Completed.');
+
+            // Upload Test
+            updateProgress(50, 'Starting Upload Test...');
+            let uploadSpeed = await testUploadSpeed();
+            uploadSpeedDisplay.textContent = uploadSpeed.toFixed(2);
+            updateProgress(80, 'Upload Test Completed.');
+
+            // Ping Test
+            updateProgress(90, 'Starting Ping Test...');
+            let pingResult = await testPing();
+            pingDisplay.textContent = pingResult.ping.toFixed(2);
+            jitterDisplay.textContent = pingResult.jitter.toFixed(2);
+            updateProgress(100, 'Test Completed.');
+
+            startTestButton.disabled = false;
+        }
+
+        async function testDownloadSpeed(url) {
+            let startTime = performance.now();
+            let response = await fetch(url);
+            let endTime = performance.now();
+            let fileSize = response.headers.get('content-length');
+            let duration = (endTime - startTime) / 1000;
+            let speed = (fileSize / duration) * 8 / (1024 * 1024);
+            return speed;
+        }
+
+        async function testUploadSpeed() {
+            let startTime = performance.now();
+            let blob = new Blob([new ArrayBuffer(1024 * 1024)]); // 1MB blob
+            let formData = new FormData();
+            formData.append('file', blob);
+
+            let response = await fetch('https://httpbin.org/post', { // Example upload server.
+                method: 'POST',
+                body: formData
+            });
+
+            let endTime = performance.now();
+            let duration = (endTime - startTime) / 1000;
+            let speed = (blob.size / duration) * 8 / (1024 * 1024);
+            return speed;
+        }
+
+        async function testPing() {
+            let startTime = performance.now();
+            let response = await fetch('https://httpbin.org/delay/1'); //Example Delay server.
+            let endTime = performance.now();
+            let ping = endTime - startTime;
+            return {ping: ping, jitter: 0}; // jitter calculation would require multiple pings.
+        }
+
+        startTestButton.addEventListener('click', performSpeedTest);
+    </script>
+</body>
+</html>
